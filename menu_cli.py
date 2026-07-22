@@ -21,9 +21,9 @@ def show_main_menu() -> None:
     table.add_column("選項", justify="center", style="bold cyan")
     table.add_column("工具")
     table.add_column("用途")
-    table.add_row("1", "XML Key Filter", "只保留指定 key 的 <data> XML")
-    table.add_row("2", "XML Content Inspector", "查看 XML 標籤與完整內容")
-    table.add_row("3", "XML Filter GUI", "開啟選檔與完整預覽視窗")
+    table.add_row("1", "XML Key Filter", "自動偵測 tag 並依多 key 篩選")
+    table.add_row("2", "XML Content Inspector", "查看結構與大型檔案安全預覽")
+    table.add_row("3", "XML Filter GUI", "搜尋、行號、預覽確認與安全另存")
     table.add_row("4", "離開", "結束程式")
     console.print(table)
 

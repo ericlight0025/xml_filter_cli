@@ -1,17 +1,20 @@
-# XML Key Filter
+# XML Key Filter Studio
 
-以 Python 製作的 XML 篩選工具，支援 Rich CLI、XML 結構查看與深色 GUI。
+Python XML 篩選工具，提供 Rich CLI、結構 Inspector 與深色 GUI。適合手動檢查 XML，也保留可批次執行的參數模式。
 
-## 功能
+## 主要功能
 
-- 只保留指定 `<key>` 的資料節點。
-- 最外層 XML 固定為 `<datalist>`。
-- 外圍 list tag 可輸入，預設為 `data`。
-- 支援完整 XML 結構與內容查看。
-- GUI 支援選檔、深色模式、XML 語法亮色、完整預覽與安全另存。
-- 預設不覆蓋原始 XML；輸出檔已存在時需要明確確認覆蓋。
+- 自動偵測 root tag、外圍 list tag 與候選 key tag。
+- 支援單一或多個 key；可用換行、逗號或分號分隔。
+- 篩選前顯示資料總數、保留筆數與刪除筆數。
+- 原始檔與輸出檔分開顯示，不會把結果檔誤當成下一次輸入。
+- 支援 XML namespace，使用 tag 的 local name 篩選。
+- GUI 提供深色 XML 語法亮色、行號、搜尋、上一筆／下一筆與 list 節點摺疊。
+- 20 MB 以上自動切換大型檔案模式：串流篩選並限制畫面預覽量。
+- 使用暫存檔完成後才替換輸出，找不到 key 時不會建立空檔。
+- 預設不覆蓋原始 XML；覆蓋輸出檔前需要明確確認。
 
-## XML 結構範例
+## XML 範例
 
 ```xml
 <datalist>
@@ -26,102 +29,164 @@
 </datalist>
 ```
 
-上述結構的外圍 list tag 是 `data`，可篩選的 key 是 `A001` 或 `A002`。
+自動偵測結果：
 
-## 啟動方式
+```text
+root tag：datalist
+list tag：data
+候選 key tags：key、name
+```
 
-所有指令均在 `xml_filter_cli` 目錄下執行，並使用工作區指定 Python：
+## Python 環境
+
+所有指令均在 `xml_filter_cli` 目錄執行，工作區預設 Python：
 
 ```text
 C:\DevWorkspace\googletts_package_shorts_venv\Scripts\python.exe
 ```
 
-### Rich 總選單
-
-```text
-C:\DevWorkspace\googletts_package_shorts_venv\Scripts\python.exe menu_cli.py
-```
-
-選單項目：
-
-1. `XML Key Filter`：互動式篩選 XML。
-2. `XML Content Inspector`：查看根標籤、子標籤統計與完整 XML。
-3. `XML Filter GUI`：開啟桌面視窗。
-4. 離開。
-
-### GUI（推薦日常手動操作）
+## GUI（推薦日常操作）
 
 ```text
 C:\DevWorkspace\googletts_package_shorts_venv\Scripts\python.exe xml_filter_gui.py
 ```
 
-GUI 操作順序：
+操作流程：
 
-1. 點擊「選擇 XML」，選取既有 XML 檔案。
-2. 下方會顯示完整 XML，並以深色編輯器風格標示 tag、屬性、值與註解。
-3. 輸入「外圍 list tag」，一般範例填 `data`。
-4. 輸入「保留 key」，例如 `A002`。
-5. 點擊「篩選並另存 XML」，選擇輸出位置。
+1. 點擊「選擇 XML」；GUI 會自動分析 root、list 與 key tag。
+2. 確認自動選出的 tag，必要時可手動修改。
+3. 在多行輸入區填入一個或多個 key。
+4. 點擊「預覽篩選結果」。
+5. 確認總數、保留數、刪除數與 XML 結果。
+6. 「確認並另存 XML」會在有效預覽後才啟用。
 
-篩選完成後，GUI 會自動載入並顯示新產生的結果 XML。
+多 key 範例：
 
-### XML Content Inspector
+```text
+A001
+A003
+A008
+```
 
-從總選單選 `2`，或直接執行：
+### GUI XML 編輯器
+
+- tag、屬性、值、註解使用不同顏色。
+- 左側顯示行號。
+- 可搜尋文字並切換上一筆／下一筆。
+- 「摺疊 list 節點」會收合目前 list tag 的內容；「展開全部」可還原。
+- 「顯示原始 XML」與篩選預覽可隨時切換。
+
+## Rich 總選單
+
+```text
+C:\DevWorkspace\googletts_package_shorts_venv\Scripts\python.exe menu_cli.py
+```
+
+選單：
+
+1. `XML Key Filter`：自動偵測 tag、預覽並篩選。
+2. `XML Content Inspector`：查看結構、筆數與 XML 內容。
+3. `XML Filter GUI`：開啟桌面 GUI。
+4. 離開。
+
+## XML Content Inspector
 
 ```text
 C:\DevWorkspace\googletts_package_shorts_venv\Scripts\python.exe inspect_xml.py examples\input.xml
 ```
 
-它會顯示完整 XML 內容，方便先確認要填的外圍 list tag，例如 `<data>`。
+Inspector 會顯示：
 
-### 參數模式
+- 檔案大小與 root tag。
+- root 下的直接子標籤與數量。
+- 每種 list tag 內的候選欄位 tag。
+- 小型 XML 的完整內容。
+- 大型 XML 的前 50 個直接子節點。
 
-適合批次或自動化流程：
-
-```text
-C:\DevWorkspace\googletts_package_shorts_venv\Scripts\python.exe filter_xml.py "XML檔案路徑" A002
-```
-
-指定外圍 list tag：
+可調整大型檔案門檻：
 
 ```text
-C:\DevWorkspace\googletts_package_shorts_venv\Scripts\python.exe filter_xml.py input.xml X002 --item-tag record
+C:\DevWorkspace\googletts_package_shorts_venv\Scripts\python.exe inspect_xml.py input.xml --large-threshold-mb 50
 ```
 
-指定輸出檔：
+## CLI 參數模式
+
+單一 key：
 
 ```text
-C:\DevWorkspace\googletts_package_shorts_venv\Scripts\python.exe filter_xml.py input.xml A002 --output result.xml
+C:\DevWorkspace\googletts_package_shorts_venv\Scripts\python.exe filter_xml.py input.xml A002
 ```
 
-若輸出檔已存在，必須加入 `--force`：
+多個 key：
+
+```text
+C:\DevWorkspace\googletts_package_shorts_venv\Scripts\python.exe filter_xml.py input.xml "A001,A003,A008"
+```
+
+指定完整 tag 設定與輸出檔：
+
+```text
+C:\DevWorkspace\googletts_package_shorts_venv\Scripts\python.exe filter_xml.py input.xml "X001;X002" --root-tag records --item-tag record --key-tag code --output result.xml
+```
+
+只預覽、不寫檔：
+
+```text
+C:\DevWorkspace\googletts_package_shorts_venv\Scripts\python.exe filter_xml.py input.xml A002 --preview-only
+```
+
+允許覆蓋既有輸出：
 
 ```text
 C:\DevWorkspace\googletts_package_shorts_venv\Scripts\python.exe filter_xml.py input.xml A002 --output result.xml --force
 ```
 
-## 測試資料
+調整大型檔案串流門檻：
 
-範例輸入檔：
+```text
+C:\DevWorkspace\googletts_package_shorts_venv\Scripts\python.exe filter_xml.py input.xml A002 --large-threshold-mb 50
+```
+
+## Namespace
+
+下列 XML 可直接用 `datalist`、`data`、`key` 篩選，不需要輸入 `{urn:example}data`：
+
+```xml
+<ns:datalist xmlns:ns="urn:example">
+    <ns:data>
+        <ns:key>N001</ns:key>
+    </ns:data>
+</ns:datalist>
+```
+
+## 大型 XML 模式
+
+預設門檻為 20 MB：
+
+- 結構分析使用 `iterparse`，不整包載入。
+- 篩選結果以串流方式寫入暫存檔，成功後才移到輸出路徑。
+- GUI 與 Inspector 為避免凍結，只顯示前 50 個直接子節點或匹配節點。
+- 保留／刪除筆數仍會統計完整檔案，不是抽樣結果。
+
+## 測試資料
 
 ```text
 examples\input.xml
 ```
 
-可用下列條件測試：
+建議測試條件：
 
 ```text
-外圍 list tag：data
-保留 key：A002
+root tag：datalist
+list tag：data
+key tag：key
+保留 keys：A002
 ```
 
 ## 相依套件
 
 - Python 標準函式庫：`tkinter`、`xml.etree.ElementTree`。
-- `rich`：Rich CLI 顯示。
-
-如需在其他環境安裝相依套件：
+- `rich`：Rich CLI 與 Inspector 顯示。
 
 ```text
 python -m pip install -r requirements.txt
@@ -135,6 +200,7 @@ C:\DevWorkspace\googletts_package_shorts_venv\Scripts\python.exe -m unittest dis
 
 ## 注意事項
 
-- XML 篩選只處理 `<datalist>` 直接下方、指定外圍 list tag 的節點。
-- 找不到指定 key 時不會建立空的輸出檔。
-- GUI 與 Inspector 會完整載入 XML；非常大的 XML 檔案會需要較多記憶體與顯示時間。
+- 篩選範圍是 root 直接下方、符合指定 list tag 的節點。
+- key tag 預設在 list 節點的直接子層。
+- XML 會以 UTF-8 重新輸出，縮排與原始檔可能不同。
+- 非 list tag 的 root 直接子節點會保留。
