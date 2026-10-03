@@ -102,6 +102,7 @@ def analyze_xml_structure(input_path: Path) -> XmlStructure:
     child_counts: Counter[str] = Counter()
     key_tags: dict[str, Counter[str]] = defaultdict(Counter)
     root_tag = ""
+    source_root: ET.Element | None = None
     depth = 0
 
     try:
@@ -110,6 +111,7 @@ def analyze_xml_structure(input_path: Path) -> XmlStructure:
                 depth += 1
                 if depth == 1:
                     root_tag = local_name(element.tag)
+                    source_root = element
                 continue
 
             if depth == 2:
@@ -118,6 +120,8 @@ def analyze_xml_structure(input_path: Path) -> XmlStructure:
                 for child in list(element):
                     key_tags[item_name][local_name(child.tag)] += 1
                 element.clear()
+                if source_root is not None:
+                    source_root.remove(element)
             depth -= 1
     except ET.ParseError as exc:
         raise XmlFilterError(f"XML 格式錯誤：{exc}") from exc
@@ -189,7 +193,10 @@ def filter_xml_by_keys(
     output_path = (output_path or default_output_path(input_path)).expanduser().resolve()
     keys = _validated_filter_settings(target_keys, root_tag, item_tag, key_tag)
     _validate_output_path(input_path, output_path, force)
-    output_path.parent.mkdir(parents=True, exist_ok=True)
+    try:
+        output_path.parent.mkdir(parents=True, exist_ok=True)
+    except OSError as exc:
+        raise XmlFilterError(f"無法建立輸出目錄：{exc}") from exc
 
     if input_path.stat().st_size >= large_threshold_bytes:
         return _filter_streaming(
@@ -277,7 +284,8 @@ def _preview_streaming(
     key_set = set(keys)
     kept = 0
     removed = 0
-    matched: list[str] = []
+    matched: dict[str, None] = {}
+    source_root: ET.Element | None = None
     preview_root: ET.Element | None = None
     depth = 0
     displayed_nodes = 0
@@ -296,6 +304,7 @@ def _preview_streaming(
                 depth += 1
                 if depth == 1:
                     _validate_root(element, root_tag)
+                    source_root = element
                     preview_root = ET.Element(element.tag, dict(element.attrib))
                 continue
 
@@ -304,7 +313,7 @@ def _preview_streaming(
                     value = _key_value(element, key_tag)
                     if value in key_set:
                         kept += 1
-                        matched.append(value)
+                        matched[value] = None
                         if preview_root is not None and displayed_nodes < preview_limit:
                             preview_root.append(copy.deepcopy(element))
                             displayed_nodes += 1
@@ -319,6 +328,8 @@ def _preview_streaming(
                     else:
                         truncated = True
                 element.clear()
+                if source_root is not None:
+                    source_root.remove(element)
             depth -= 1
     except ET.ParseError as exc:
         raise XmlFilterError(f"XML 格式錯誤：{exc}") from exc
@@ -384,6 +395,8 @@ def _filter_streaming(
     kept = 0
     removed = 0
     depth = 0
+    source_root: ET.Element | None = None
+    closing = ""
     temp_path = _temporary_output_path(output_path)
     output_file = None
 
@@ -402,7 +415,8 @@ def _filter_streaming(
                 depth += 1
                 if depth == 1:
                     _validate_root(element, root_tag)
-                    opening, _closing = _root_tags(element)
+                    source_root = element
+                    opening, closing = _root_tags(element)
                     output_file.write(opening + "\n")
                 continue
 
@@ -427,8 +441,9 @@ def _filter_streaming(
                     )
                     output_file.write("\n")
                 element.clear()
+                if source_root is not None:
+                    source_root.remove(element)
             elif depth == 1:
-                _opening, closing = _root_tags(element)
                 output_file.write(closing + "\n")
             depth -= 1
 
@@ -463,18 +478,18 @@ def _filter_tree(
 ) -> tuple[int, int, list[str]]:
     kept = 0
     removed = 0
-    matched: list[str] = []
+    matched: dict[str, None] = {}
     for node in list(root):
         if local_name(node.tag) != item_tag:
             continue
         value = _key_value(node, key_tag)
         if value in keys:
             kept += 1
-            matched.append(value)
+            matched[value] = None
         else:
             root.remove(node)
             removed += 1
-    return kept, removed, matched
+    return kept, removed, list(matched)
 
 
 def _key_value(item: ET.Element, key_tag: str) -> str:
@@ -571,11 +586,14 @@ def _raise_if_no_match(keys: tuple[str, ...], item_tag: str, kept: int) -> None:
 
 
 def _temporary_output_path(output_path: Path) -> Path:
-    handle = tempfile.NamedTemporaryFile(
-        prefix=f".{output_path.stem}.",
-        suffix=".tmp",
-        dir=output_path.parent,
-        delete=False,
-    )
-    handle.close()
+    try:
+        handle = tempfile.NamedTemporaryFile(
+            prefix=f".{output_path.stem}.",
+            suffix=".tmp",
+            dir=output_path.parent,
+            delete=False,
+        )
+        handle.close()
+    except OSError as exc:
+        raise XmlFilterError(f"無法建立輸出暫存檔：{exc}") from exc
     return Path(handle.name)

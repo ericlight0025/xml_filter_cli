@@ -85,6 +85,7 @@ def inspect_xml(
 def _large_xml_preview(input_path: Path, item_limit: int) -> str:
     """大型 XML 不整包載入，只建立前 N 個直接子節點的顯示內容。"""
     preview_root: ET.Element | None = None
+    source_root: ET.Element | None = None
     depth = 0
     appended = 0
     try:
@@ -92,6 +93,7 @@ def _large_xml_preview(input_path: Path, item_limit: int) -> str:
             if event == "start":
                 depth += 1
                 if depth == 1:
+                    source_root = element
                     preview_root = ET.Element(element.tag, dict(element.attrib))
                 continue
             if depth == 2:
@@ -99,6 +101,8 @@ def _large_xml_preview(input_path: Path, item_limit: int) -> str:
                     preview_root.append(copy.deepcopy(element))
                     appended += 1
                 element.clear()
+                if source_root is not None:
+                    source_root.remove(element)
             depth -= 1
     except ET.ParseError as exc:
         raise XmlInspectError(f"XML 格式錯誤：{exc}") from exc
