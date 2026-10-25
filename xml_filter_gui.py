@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import re
 import tkinter as tk
+from bisect import bisect_right
 from pathlib import Path
 from tkinter import filedialog, messagebox, ttk
 
@@ -84,6 +85,12 @@ def find_element_content_ranges(content: str, target_tag: str) -> list[tuple[int
     return ranges
 
 
+def text_index(line_starts: list[int], offset: int) -> str:
+    """字元位置轉成 Tk 的「行.欄」索引；1.0+Nc 每次都從頭數，大檔上色會變成平方時間。"""
+    line = bisect_right(line_starts, offset) - 1
+    return f"{line + 1}.{offset - line_starts[line]}"
+
+
 class XmlFilterApp:
     """整合結構分析、篩選預覽、搜尋與安全另存的桌面介面。"""
 
@@ -94,6 +101,7 @@ class XmlFilterApp:
         self.preview_signature: tuple[object, ...] | None = None
         self.search_positions: list[tuple[str, str]] = []
         self.search_index = -1
+        self.line_starts: list[int] = [0]
 
         self.input_path_var = tk.StringVar()
         self.output_path_var = tk.StringVar(value="尚未輸出")
@@ -463,12 +471,16 @@ class XmlFilterApp:
         self._show_preview_summary(result_preview)
 
     def _show_preview_summary(self, result_preview: FilterPreview) -> None:
+        missing = result_preview.missing_keys
+        missing_text = f"｜找不到 {len(missing)}" if missing else ""
         self.summary_var.set(
             f"總數 {result_preview.total_count}｜保留 {result_preview.kept_count}｜"
-            f"刪除 {result_preview.removed_count}"
+            f"刪除 {result_preview.removed_count}{missing_text}"
         )
         mode = "大型檔案串流模式" if result_preview.streaming_recommended else "一般模式"
         suffix = "，內容只顯示前 50 筆" if result_preview.truncated else ""
+        if missing:
+            suffix += f"；找不到這些 key：{', '.join(missing)}"
         self.status_var.set(f"篩選預覽完成：{mode}{suffix}。確認無誤後即可另存。")
 
     def filter_and_save(self) -> None:
@@ -668,6 +680,7 @@ class XmlFilterApp:
         self.preview.tag_configure("search_current", background="#B45309", foreground="#FFFFFF")
 
     def _highlight_xml(self, content: str) -> None:
+        self.line_starts = [0] + [match.end() for match in re.finditer("\n", content)]
         for match in XML_COMMENT_PATTERN.finditer(content):
             self._add_text_tag("xml_comment", match.start(), match.end())
         for match in XML_DECLARATION_PATTERN.finditer(content):
@@ -693,7 +706,11 @@ class XmlFilterApp:
                 )
 
     def _add_text_tag(self, tag_name: str, start: int, end: int) -> None:
-        self.preview.tag_add(tag_name, f"1.0+{start}c", f"1.0+{end}c")
+        self.preview.tag_add(
+            tag_name,
+            text_index(self.line_starts, start),
+            text_index(self.line_starts, end),
+        )
 
     def _scroll_vertical(self, *args: object) -> None:
         self.preview.yview(*args)

@@ -91,6 +91,8 @@ def show_preview(preview: FilterPreview, output_path: Path | None = None) -> Non
     table.add_row("資料總數", str(preview.total_count))
     table.add_row("預計保留", str(preview.kept_count))
     table.add_row("預計刪除", str(preview.removed_count))
+    if preview.missing_keys:
+        table.add_row("找不到的 keys", ", ".join(preview.missing_keys), style="yellow")
     table.add_row("處理模式", "串流" if preview.streaming_recommended else "一般")
     if output_path is not None:
         table.add_row("輸出 XML", str(output_path))
@@ -216,6 +218,10 @@ def main(argv: list[str] | None = None) -> int:
         if args.preview_only:
             show_preview(preview, args.output)
             return 0
+        if preview.missing_keys:
+            error_console.print(
+                f"[yellow]警告：找不到這些 key：{', '.join(preview.missing_keys)}[/yellow]"
+            )
         result = filter_xml_by_keys(
             args.xml_filepath,
             preview.target_keys,
