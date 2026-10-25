@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import codecs
 import copy
 import re
 import tempfile
@@ -17,6 +18,9 @@ ITEM_TAG = "data"
 KEY_TAG = "key"
 LARGE_FILE_THRESHOLD_BYTES = 20 * 1024 * 1024
 LARGE_PREVIEW_ITEM_LIMIT = 50
+# expat 只內建這些編碼；其他宣告（例如 Big5、MS950）改由 Python 解碼後再交給 parser。
+EXPAT_ENCODINGS = {"utf-8", "utf-16", "utf-16-le", "utf-16-be", "ascii", "iso8859-1"}
+XML_DECLARED_ENCODING = re.compile(rb"<\?xml[^>]*?encoding\s*=\s*[\"']([A-Za-z0-9._-]+)[\"']")
 
 
 class XmlFilterError(Exception):
@@ -52,6 +56,12 @@ class FilterPreview:
     truncated: bool
     streaming_recommended: bool
 
+    @property
+    def missing_keys(self) -> tuple[str, ...]:
+        """輸入了但 XML 中找不到的 key，避免打錯的 key 默默被忽略。"""
+        matched = set(self.matched_keys)
+        return tuple(key for key in self.target_keys if key not in matched)
+
 
 @dataclass(frozen=True)
 class FilterResult:
@@ -73,13 +83,13 @@ def local_name(tag: str) -> str:
 
 
 def parse_target_keys(values: str | Iterable[str]) -> tuple[str, ...]:
-    """接受換行、逗號或分號分隔的多個 key，去除空白與重複值。"""
+    """接受換行、Tab、半形或全形逗號／分號分隔的多個 key，去除空白與重複值。"""
     if isinstance(values, str):
-        candidates = re.split(r"[\n,;]+", values)
+        candidates = re.split(r"[\n\t,;，；]+", values)
     else:
         candidates = []
         for value in values:
-            candidates.extend(re.split(r"[\n,;]+", str(value)))
+            candidates.extend(re.split(r"[\n\t,;，；]+", str(value)))
 
     unique_keys: list[str] = []
     seen: set[str] = set()
@@ -106,7 +116,7 @@ def analyze_xml_structure(input_path: Path) -> XmlStructure:
     depth = 0
 
     try:
-        for event, element in ET.iterparse(input_path, events=("start", "end")):
+        for event, element in iterparse_xml(input_path, events=("start", "end")):
             if event == "start":
                 depth += 1
                 if depth == 1:
@@ -123,7 +133,7 @@ def analyze_xml_structure(input_path: Path) -> XmlStructure:
                 if source_root is not None:
                     source_root.remove(element)
             depth -= 1
-    except ET.ParseError as exc:
+    except (ET.ParseError, UnicodeDecodeError) as exc:
         raise XmlFilterError(f"XML 格式錯誤：{exc}") from exc
     except OSError as exc:
         raise XmlFilterError(f"無法讀取 XML：{exc}") from exc
@@ -249,7 +259,7 @@ def _preview_in_memory(
     item_tag: str,
     key_tag: str,
 ) -> FilterPreview:
-    tree = _parse_tree(input_path)
+    tree = parse_xml_tree(input_path)
     root = tree.getroot()
     _validate_root(root, root_tag)
     kept, removed, matched = _filter_tree(root, set(keys), item_tag, key_tag)
@@ -292,7 +302,7 @@ def _preview_streaming(
     truncated = False
 
     try:
-        for event, payload in ET.iterparse(
+        for event, payload in iterparse_xml(
             input_path,
             events=("start-ns", "start", "end"),
         ):
@@ -331,7 +341,7 @@ def _preview_streaming(
                 if source_root is not None:
                     source_root.remove(element)
             depth -= 1
-    except ET.ParseError as exc:
+    except (ET.ParseError, UnicodeDecodeError) as exc:
         raise XmlFilterError(f"XML 格式錯誤：{exc}") from exc
     except OSError as exc:
         raise XmlFilterError(f"無法讀取 XML：{exc}") from exc
@@ -366,7 +376,7 @@ def _filter_in_memory(
     item_tag: str,
     key_tag: str,
 ) -> FilterResult:
-    tree = _parse_tree(input_path)
+    tree = parse_xml_tree(input_path)
     root = tree.getroot()
     _validate_root(root, root_tag)
     kept, removed, _matched = _filter_tree(root, set(keys), item_tag, key_tag)
@@ -403,7 +413,7 @@ def _filter_streaming(
     try:
         output_file = temp_path.open("w", encoding="utf-8", newline="\n")
         output_file.write("<?xml version='1.0' encoding='utf-8'?>\n")
-        for event, payload in ET.iterparse(
+        for event, payload in iterparse_xml(
             input_path,
             events=("start-ns", "start", "end"),
         ):
@@ -451,7 +461,7 @@ def _filter_streaming(
         output_file = None
         _raise_if_no_match(keys, item_tag, kept)
         temp_path.replace(output_path)
-    except ET.ParseError as exc:
+    except (ET.ParseError, UnicodeDecodeError) as exc:
         if output_file is not None:
             output_file.close()
         temp_path.unlink(missing_ok=True)
@@ -499,18 +509,42 @@ def _key_value(item: ET.Element, key_tag: str) -> str:
     return ""
 
 
-def _parse_tree(input_path: Path) -> ET.ElementTree:
-    namespaces: list[tuple[str, str]] = []
+def iterparse_xml(input_path: Path, events: tuple[str, ...]):
+    """ET.iterparse 的包裝；expat 不支援的宣告編碼先用 Python 解碼成文字再解析。"""
+    encoding = _python_decoded_encoding(input_path)
+    if encoding is None:
+        yield from ET.iterparse(input_path, events=events)
+        return
+    with input_path.open(encoding=encoding) as handle:
+        yield from ET.iterparse(handle, events=events)
+
+
+def _python_decoded_encoding(input_path: Path) -> str | None:
+    with input_path.open("rb") as handle:
+        match = XML_DECLARED_ENCODING.match(handle.read(256))
+    if match is None:
+        return None
     try:
-        for _event, namespace in ET.iterparse(input_path, events=("start-ns",)):
-            namespaces.append(namespace)
-        for namespace in namespaces:
-            _register_namespace(namespace)
-        return ET.parse(input_path)
-    except ET.ParseError as exc:
+        encoding = codecs.lookup(match.group(1).decode("ascii")).name
+    except LookupError:
+        return None
+    return None if encoding in EXPAT_ENCODINGS else encoding
+
+
+def parse_xml_tree(input_path: Path) -> ET.ElementTree:
+    """一次讀取：登記原始 namespace prefix 並建立完整樹。"""
+    root: ET.Element | None = None
+    try:
+        for event, payload in iterparse_xml(input_path, events=("start-ns", "start")):
+            if event == "start-ns":
+                _register_namespace(payload)
+            elif root is None:
+                root = payload
+    except (ET.ParseError, UnicodeDecodeError) as exc:
         raise XmlFilterError(f"XML 格式錯誤：{exc}") from exc
     except OSError as exc:
         raise XmlFilterError(f"無法讀取 XML：{exc}") from exc
+    return ET.ElementTree(root)
 
 
 def _root_tags(root: ET.Element) -> tuple[str, str]:

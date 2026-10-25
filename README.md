@@ -5,8 +5,9 @@ Python XML 篩選工具，提供 Rich CLI、結構 Inspector 與深色 GUI。適
 ## 主要功能
 
 - 自動偵測 root tag、外圍 list tag 與候選 key tag。
-- 支援單一或多個 key；可用換行、逗號或分號分隔。
-- 篩選前顯示資料總數、保留筆數與刪除筆數。
+- 支援單一或多個 key；可用換行、Tab、半形或全形逗號／分號分隔。
+- 篩選前顯示資料總數、保留筆數與刪除筆數，並列出 XML 中找不到的 key。
+- 支援宣告為 Big5、MS950 等編碼的 XML（輸出一律為 UTF-8）。
 - 原始檔與輸出檔分開顯示，不會把結果檔誤當成下一次輸入。
 - 支援 XML namespace，使用 tag 的 local name 篩選。
 - GUI 提供深色 XML 語法亮色、行號、搜尋、上一筆／下一筆與 list 節點摺疊。

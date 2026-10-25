@@ -18,6 +18,8 @@ from xml_service import (
     LARGE_FILE_THRESHOLD_BYTES,
     XmlFilterError,
     analyze_xml_structure,
+    iterparse_xml,
+    parse_xml_tree,
 )
 
 
@@ -58,11 +60,9 @@ def inspect_xml(
         truncated = sum(structure.child_tag_counts.values()) > large_item_limit
     else:
         try:
-            tree = ET.parse(structure.input_path)
-        except ET.ParseError as exc:
-            raise XmlInspectError(f"XML 格式錯誤：{exc}") from exc
-        except OSError as exc:
-            raise XmlInspectError(f"無法讀取 XML：{exc}") from exc
+            tree = parse_xml_tree(structure.input_path)
+        except XmlFilterError as exc:
+            raise XmlInspectError(str(exc)) from exc
         ET.indent(tree, space="    ")
         display_xml = ET.tostring(
             tree.getroot(),
@@ -89,7 +89,7 @@ def _large_xml_preview(input_path: Path, item_limit: int) -> str:
     depth = 0
     appended = 0
     try:
-        for event, element in ET.iterparse(input_path, events=("start", "end")):
+        for event, element in iterparse_xml(input_path, events=("start", "end")):
             if event == "start":
                 depth += 1
                 if depth == 1:
@@ -104,7 +104,7 @@ def _large_xml_preview(input_path: Path, item_limit: int) -> str:
                 if source_root is not None:
                     source_root.remove(element)
             depth -= 1
-    except ET.ParseError as exc:
+    except (ET.ParseError, UnicodeDecodeError) as exc:
         raise XmlInspectError(f"XML 格式錯誤：{exc}") from exc
     except OSError as exc:
         raise XmlInspectError(f"無法讀取 XML：{exc}") from exc
